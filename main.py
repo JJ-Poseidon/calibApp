@@ -12,11 +12,11 @@ from cvDetector import detector
 
 # Configure your camera URL here!
 # camera_url = "http://root:tJe9R87pDxG6b62@192.168.110.150/axis-cgi/mjpg/video.cgi" # Axis Camera
-# camera_url = "rtsp://root:tJe9R87pDxG6b62@192.168.110.150/axis-media/media.amp" # Axis Camera
+camera_url = "rtsp://root:tJe9R87pDxG6b62@192.168.110.150/axis-media/media.amp" # Axis Camera
 # camera_url = "rtsp://admin:smB@ston!@192.168.50.175/profile2/media.smp"
 # camera_url = "rtsp://192.168.50.175/profile2/media.smp" # Wisenet Camera
 # camera_url = "rtsp://service:smB0ston!@10.200.11.33:554/" # Bosch Camera
-camera_url = "rtsp://10.200.11.33/axis-media/media.amp"
+# camera_url = "rtsp://10.200.11.33/axis-media/media.amp"
 # camera_url = 0 # For local built-in camera
 # camera_url = "http://localhost:8080/video" 
 
@@ -28,9 +28,9 @@ lock = threading.Lock()
 # ========== Embedded run_live_feedback Logic ==========
 # frame_count = 0
 tagDet = detector()
-WIDTH = 1920
-HEIGHT = 1080
-frame_size = WIDTH * HEIGHT * 3
+WIDTH = 3840
+HEIGHT = 2160
+frame_size = WIDTH * HEIGHT * 3  # 3 channels for RGB
 
 tagDet = detector()
 persistent_corners = []
@@ -40,16 +40,18 @@ lock = threading.Lock()
 # ========== Focus Helper ==========
 def run_focusHelper():
     cmd = [
-        'ffmpeg',
-        '-rtsp_transport', 'tcp',
-        '-fflags', 'nobuffer',
-        '-flags', 'low_delay',
-        '-i', camera_url,
-        '-an',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-vcodec', 'rawvideo',
-        '-'
+    'ffmpeg',
+    '-rtsp_transport', 'tcp',
+    '-fflags', 'nobuffer',
+    '-flags', 'low_delay',
+    '-r', '10',                      # <-- Desired FPS before input (optional)
+    '-i', camera_url,
+    '-an',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'bgr24',
+    '-vcodec', 'rawvideo',
+    '-r', '10',                      # <-- Desired FPS for output (important)
+    '-'
     ]
 
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -84,6 +86,8 @@ def run_focusHelper():
             text = f"Focus: {laplacian_var:.2f}"
             cv2.putText(frame, text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, focus_color, 3)
 
+            cv2.resize(frame, (1920, 1080))
+
             # Encode frame to JPEG
             ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
             if not ret:
@@ -103,16 +107,18 @@ def run_focusHelper():
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
     cmd = [
-        'ffmpeg',
-        '-rtsp_transport', 'tcp',
-        '-fflags', 'nobuffer',
-        '-flags', 'low_delay',
-        '-i', camera_url,
-        '-an',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-vcodec', 'rawvideo',
-        '-'
+    'ffmpeg',
+    '-rtsp_transport', 'tcp',
+    '-fflags', 'nobuffer',
+    '-flags', 'low_delay',
+    '-r', '8',                      # <-- Desired FPS before input (optional)
+    '-i', camera_url,
+    '-an',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'bgr24',
+    '-vcodec', 'rawvideo',
+    '-r', '8',                      # <-- Desired FPS for output (important)
+    '-'
     ]
 
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -136,6 +142,8 @@ def run_liveFeedback():
             for marker_corners in persistent_corners:
                 for x, y in marker_corners:
                     cv2.circle(frame, (int(x), int(y)), 10, (255, 0, 0), -1)
+            
+            cv2.resize(frame, (1920, 1080))
 
             ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
             if not ret:
