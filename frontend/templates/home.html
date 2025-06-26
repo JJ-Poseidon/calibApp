@@ -1,10 +1,101 @@
 <!DOCTYPE html>
 <html>
-<head><title>Home</title></head>
+<head>
+    <title>Home</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #444;
+            color: white;
+            text-align: center;
+            padding-top: 50px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        form {
+            margin-bottom: 40px;
+        }
+
+        input[list] {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            width: 250px;
+        }
+
+        .submit-button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            background-color: #ffe121;
+            color: black;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .submit-button:hover {
+            background-color: #ffcd17ee;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+        }
+
+        .button-link {
+            text-decoration: none;
+            background-color: #ffe121;
+            color: black;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 18px;
+            transition: background-color 0.3s;
+        }
+
+        .button-link:hover {
+            background-color: #ffcd17ee;
+        }
+    </style>
+</head>
 <body>
-    <h2>Home Screen</h2>
-    <a href="/function1">Function 1</a><br>
-    <a href="/function2">Function 2</a><br>
-    <a href="/function3">Function 3</a><br>
+    <img src="/static/SM-Vertical.png" width="240" style="position: absolute; top: 0; left: 0;" />
+    
+    <h1>Home Screen</h1>
+
+    <p style="margin-top: 20px; font-size: 16px;">
+    Please select a camera URL from the dropdown with your respective camera URL, or enter a new one to connect with a camera first!
+    </p>
+
+    <!-- Dropdown + Text Input -->
+    <form method="post" action="/test_url">
+        <input list="presetOptions" name="camera_url_input" placeholder="Select or type..." required>
+        <datalist id="presetOptions">
+            <option value="rtsp://root:tJe9R87pDxG6b62@192.168.110.150/axis-media/media.amp">
+            <option value="rtsp://admin:smB0ston!@192.168.50.175/profile2/media.smp">
+            <option value="rtsp://service:smB0ston!@10.200.11.33:554/">
+            <option value="rtsp://10.200.11.33/axis-media/media.amp">
+        </datalist>
+        <button class="submit-button" type="submit">Connect</button>
+    </form>
+
+    {% if camera_status %}
+        <p style="margin-bottom: 20px; font-size: 18px; color: {{ 'limegreen' if camera_status == 'Camera Connected!' else 'red' }};">
+            {{ camera_status }}
+        </p>
+    {% endif %}
+
+    <!-- Navigation Buttons -->
+    <div class="button-container">
+        <a class="button-link" href="/focusHelp">Focus Helper</a>
+        <a class="button-link" href="/calculateCD">CD Calculator</a>
+        <a class="button-link" href="/liveDetect">Live Tag Detection</a>
+    </div>
 </body>
 </html>
