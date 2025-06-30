@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 import subprocess
 import threading
 import uvicorn
+import time
 import cv2
 import numpy as np
 
@@ -18,8 +19,7 @@ from cvDetector import detector
 # camera_url = "rtsp://192.168.50.175/profile2/media.smp" # Wisenet Camera
 # camera_url = "rtsp://service:smB0ston!@10.200.11.33:554/" # Bosch Camera
 # camera_url = "rtsp://10.200.11.33/axis-media/media.amp"
-# camera_url = 0 # For local built-in camera
-# camera_url = "http://localhost:8080/video"
+# camera_url = "http://localhost:8080/video" # Local test stream
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
@@ -28,13 +28,54 @@ lock = threading.Lock()
 
 # ========== Setting up variables ==========
 tagDet = detector()
-WIDTH = 1920
-HEIGHT = 1080
+WIDTH = 3840
+HEIGHT = 2160
 frame_size = WIDTH * HEIGHT * 3  # 3 channels for RGB
 tagDet = detector()
+detection_enabled = False  # Flag to control tag detection
+focus_enabled = False  # Flag to control focus measurement
 persistent_corners = []
-detection_enabled = False
+focus_data = {
+    "bbox": None,  # Bounding box for detected markers
+    "laplacian": None  # Focus measure
+}
 lock = threading.Lock()
+
+# ---- ArUco Board Setup ----
+board_def = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
+board = cv2.aruco.GridBoard(
+    size=(6,6),
+    markerLength=0.0873125,      # Adjust to match your board in meters or relative scale
+    markerSeparation=0.308,
+    dictionary=board_def
+)
+
+def focus_worker(get_frame_func):
+    """Background thread for tag detection and focus measurement."""
+    while True:
+        if focus_enabled:
+            frame = get_frame_func()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            corners, ids, _ = tagDet.detectMarkers(gray)
+
+            with lock:
+                if ids is not None and len(corners) > 0:
+                    all_pts = np.vstack(corners).reshape(-1, 2).astype(int)
+                    x, y, w, h = cv2.boundingRect(all_pts)
+                    crop = gray[y:y+h, x:x+w]
+                    lap = cv2.Laplacian(crop, cv2.CV_64F).var()
+
+                    focus_data["bbox"] = (x, y, w, h)
+                    focus_data["laplacian"] = lap
+                else:
+                    focus_data["bbox"] = None
+                    focus_data["laplacian"] = None
+        else:
+            time.sleep(0.1)  # Idle when focus is disabled
 
 # ========== Focus Helper ==========
 def run_focusHelper():
@@ -54,37 +95,39 @@ def run_focusHelper():
     ]
 
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    focus_threshold = 4500.0
+    last_frame = [None]
+
+    def get_latest_frame():
+        with lock:
+            return last_frame[0].copy() if last_frame[0] is not None else None
+
+    threading.Thread(target=focus_worker, args=(get_latest_frame,), daemon=True).start()
 
     try:
         while True:
-            raw_frame = pipe.stdout.read(frame_size)
-            if len(raw_frame) != frame_size:
+            raw = pipe.stdout.read(frame_size)
+            if len(raw) != frame_size:
                 continue
 
-            frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)).copy()
+            frame = np.frombuffer(raw, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)).copy()
 
-            # ======== Focus Measurement ========
-            # h_crop = int(HEIGHT * 0.01)
-            # w_crop = int(WIDTH * 0.01)
-            y1 = HEIGHT // 2 - 8 # h_crop // 2
-            y2 = HEIGHT // 2 + 8 # h_crop // 2
-            x1 = WIDTH // 2 - 8 # w_crop // 2
-            x2 = WIDTH // 2 + 8 # w_crop // 2
+            with lock:
+                last_frame[0] = frame.copy()  # Let thread read this
 
-            center_crop = frame[y1:y2, x1:x2]
-            gray_crop = cv2.cvtColor(center_crop, cv2.COLOR_BGR2GRAY)
-            laplacian_var = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
-
-            # Threshold to consider it "in focus"
-            focus_threshold = 4500.0
-            focus_color = (0, 255, 0) if laplacian_var > focus_threshold else (0, 0, 255)
-
-            # Draw rectangle for visualizing the crop
-            cv2.rectangle(frame, (x1, y1), (x2, y2), focus_color, 2)
-
-            # Put Laplacian variance at top of screen
-            text = f"Focus: {laplacian_var:.2f}"
-            cv2.putText(frame, text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, focus_color, 3)
+                bbox = focus_data["bbox"]
+                lap = focus_data["laplacian"]
+            
+            if focus_enabled:
+                if bbox is not None and lap is not None:
+                    x, y, w, h = bbox
+                    focus_color = (0, 255, 0) if lap > focus_threshold else (0, 0, 255)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
+                    cv2.putText(frame, f"Focus: {lap:.2f}", (70, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 3.0, focus_color, 3)
+                elif focus_enabled:
+                    cv2.putText(frame, "Detecting ArUco...", (70, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 3.0, (0, 255, 255), 2)
             
             frame = cv2.resize(frame, (1920, 1080))
 
@@ -112,6 +155,14 @@ def compute_CD(x, y):
             - 19.841 * x
             + 10.4239 * y
             + 9.0062)        
+
+# ========== Tag Coordinate Record ==========
+def detect_tags(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    corners, ids, _ = tagDet.detectMarkers(gray)
+    if ids is not None:
+        with lock:
+            persistent_corners.extend(c[0] for c in corners)
 
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
@@ -142,12 +193,8 @@ def run_liveFeedback():
             frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)).copy()
             frame_count += 1
 
-            if detection_enabled:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                corners, ids, rejected = tagDet.detectMarkers(gray)
-                if frame_count % 4 == 0 and ids is not None:
-                    with lock:
-                        persistent_corners.extend([corner[0] for corner in corners])
+            if detection_enabled and frame_count % 4 == 0:
+                threading.Thread(target=detect_tags, args=(frame.copy(),)).start()
 
             if frame_count % 1 == 0:
                 for marker_corners in persistent_corners:
@@ -181,6 +228,16 @@ def video_focus():
 @app.get("/video_feed")
 def video_feed():
     return StreamingResponse(run_liveFeedback(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.post("/toggle_focus")
+def toggle_focus():
+    global focus_enabled
+    with lock:
+        focus_enabled = not focus_enabled
+        # Always reset focus data on toggle (both directions)
+        focus_data["bbox"] = None
+        focus_data["laplacian"] = None
+    return {"status": "focus_enabled" if focus_enabled else "focus_disabled"}
 
 @app.post("/toggle_detection")
 def toggle_detection():
