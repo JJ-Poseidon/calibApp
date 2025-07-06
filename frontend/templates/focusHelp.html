@@ -49,10 +49,18 @@
         document.addEventListener("keydown", function(event) {
             if (event.key === "t" || event.key === "T") {
                 fetch("/toggle_focus", { method: "POST" });
+            } else if (event.key === "r" || event.key === "C") {
+                fetch("/record_focus", { method: "POST" });
             }
         });    
+
+        // Send signal to server before page unload
+        window.addEventListener("beforeunload", function () {
+            navigator.sendBeacon("/stop_focus_stream");
+        });
     </script>
 </head>
+
 <body>
     <img src="/static/SM-Vertical.png" width="60" style="position: absolute; top: 0; left: 0;" />
     <h1>Focus Helper</h1>
@@ -60,6 +68,12 @@
     <div class="video-container">
         <img src="/video_focus" width="1080" alt="Camera Feed">
     </div>
+
+    <p style="margin-top: 20px; font-size: 16px;">
+            Enable focus first: Press <strong>T</strong><br>
+            Record focus: Press <strong>R</strong><br>
+    </p>
+
     <a href="/" class="button-link back-button">Back</a>
 </body>
 </html>

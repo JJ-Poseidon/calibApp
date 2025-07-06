@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, BackgroundTasks, Form
-from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -31,7 +31,6 @@ tagDet = detector()
 WIDTH = 3840
 HEIGHT = 2160
 frame_size = WIDTH * HEIGHT * 3  # 3 channels for RGB
-tagDet = detector()
 detection_enabled = False  # Flag to control tag detection
 focus_enabled = False  # Flag to control focus measurement
 persistent_corners = []
@@ -79,8 +78,12 @@ def focus_worker(get_frame_func):
 
 # ========== Focus Helper ==========
 def run_focusHelper():
+    global end_stream
+    end_stream = False
+
     cmd = [
     'ffmpeg',
+    '-loglevel', 'quiet',
     '-rtsp_transport', 'tcp',
     '-fflags', 'nobuffer',
     '-flags', 'low_delay',
@@ -105,7 +108,7 @@ def run_focusHelper():
     threading.Thread(target=focus_worker, args=(get_latest_frame,), daemon=True).start()
 
     try:
-        while True:
+        while not end_stream:
             raw = pipe.stdout.read(frame_size)
             if len(raw) != frame_size:
                 continue
@@ -123,23 +126,24 @@ def run_focusHelper():
                     x, y, w, h = bbox
                     focus_color = (0, 255, 0) if lap > focus_threshold else (0, 0, 255)
                     cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
-                    cv2.putText(frame, f"Focus: {lap:.2f}", (70, 50),
+                    cv2.putText(frame, f"Focus: {lap:.2f}", (70, 70),
                                 cv2.FONT_HERSHEY_SIMPLEX, 3.0, focus_color, 3)
                 elif focus_enabled:
-                    cv2.putText(frame, "Detecting ArUco...", (70, 50),
+                    cv2.putText(frame, "Detecting ArUco...", (70, 70),
                                 cv2.FONT_HERSHEY_SIMPLEX, 3.0, (0, 255, 255), 2)
             
             frame = cv2.resize(frame, (1920, 1080))
 
             # Encode frame to JPEG
             ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-
             if not ret:
                 continue
+
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
             )
+
     except GeneratorExit:
         print("[INFO] Client disconnected, shutting down FFmpeg")
     finally:
@@ -166,8 +170,12 @@ def detect_tags(frame):
 
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
+    global end_stream
+    end_stream = False
+
     cmd = [
     'ffmpeg',
+    '-loglevel', 'quiet',
     '-rtsp_transport', 'tcp',
     '-fflags', 'nobuffer',
     '-flags', 'low_delay',
@@ -180,12 +188,12 @@ def run_liveFeedback():
     '-pix_fmt', 'bgr24',
     '-'
     ]
-
+   
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     frame_count = 0
 
     try:
-        while True:
+        while not end_stream:
             raw_frame = pipe.stdout.read(frame_size)
             if len(raw_frame) != frame_size:
                 continue
@@ -194,16 +202,16 @@ def run_liveFeedback():
             frame_count += 1
 
             if detection_enabled and frame_count % 4 == 0:
-                threading.Thread(target=detect_tags, args=(frame.copy(),)).start()
+                threading.Thread(target=detect_tags, args=(frame,)).start()
 
             if frame_count % 1 == 0:
                 for marker_corners in persistent_corners:
                     for x, y in marker_corners:
                         cv2.circle(frame, (int(x), int(y)), 10, (255, 0, 0), -1)
 
-            frame = cv2.resize(frame, (1920, 1080))
+            frame = cv2.resize(frame, (1280, 720))
 
-            ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
 
             if not ret:
                 continue
@@ -220,10 +228,16 @@ def run_liveFeedback():
         pipe.wait()
         print("[INFO] FFmpeg process terminated")
 
-# ========== Routes ==========
+# ========== HTML Routes ==========
 @app.get("/video_focus")
 def video_focus():
     return StreamingResponse(run_focusHelper(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.post("/record_focus")
+def record_focus():
+    global start_recording
+    start_recording = not start_recording
+    return {"status": "recording_started" if start_recording else "recording_stopped"}
 
 @app.get("/video_feed")
 def video_feed():
@@ -256,6 +270,12 @@ def clear_corners():
 def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request, "camera_status": None})
 
+@app.post("/stop_stream")
+def stop_stream():
+    global end_stream
+    end_stream = True
+    return Response(status_code=204)
+
 @app.post("/test_url")
 def test_url(request: Request, camera_url_input: str = Form(...)):
     global camera_url
@@ -286,7 +306,6 @@ async def calculateCD_result(request: Request, focal_length: float = Form(...)):
 
     max_index = np.argmax(z_values)
     best_y = y_values[max_index]
-    max_z = z_values[max_index]
 
     return templates.TemplateResponse("calculateCD.html", {
         "request": request,

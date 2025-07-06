@@ -14,6 +14,7 @@ def detector():
     params.perspectiveRemovePixelPerCell = 1
     params.perspectiveRemoveIgnoredMarginPerCell = 0
 
-    # Set up detector once outside the loop
+     # Set up detector once outside the loop
     detector = cv2.aruco.ArucoDetector(aruco_dict, params)
+
     return detector

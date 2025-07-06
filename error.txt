@@ -1,0 +1,12 @@
+[ERROR] [1751394299.536848]: Exception: OpenCV(4.11.0) /io/opencv/modules/highgui/src/window.cpp:1295: error: 
+(-2:Unspecified error) The function is not implemented. Rebuild the library with Windows, GTK+ 2.x or Cocoa support.
+If you are on Ubuntu or Debian, install libgtk2.0-dev and pkg-config, then re-run cmake or configure script in
+function 'cvDestroyAllWindows'
+
+Starting final outlier filtering...
+  Progress 383 / 519     Time remaining: 2m 8s                  
+  ./catkin_ws/src/kalibr/recalibration.sh: line 45:   215 Killed                  
+  rosrun kalibr tartan_calibrate --bag /mnt/$UTC_DATETIME/data/intrinsics_$UTC_DATETIME.bag --target /catkin_ws/src/kalibr/april.yaml 
+  --topics /camera1/image_raw --min-init-corners-autocomplete 20 --min-tag-size-autocomplete 2 --correction-threshold 5.0 --models pinhole-equi 
+  --save_dir $RES_DIR/ --debug_image_dir $RES_DIR/debug/ --approx-sync 0 --mi-tol 0.01 --dont-show-report --remove-percent 0 --no-shuffle --frame-step 2
+Invalid recalibration.
