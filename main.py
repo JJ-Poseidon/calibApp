@@ -36,7 +36,8 @@ focus_enabled = False  # Flag to control focus measurement
 persistent_corners = []
 focus_data = {
     "bbox": None,  # Bounding box for detected markers
-    "laplacian": None  # Focus measure
+    "laplacian": None,  # Focus measure
+    "focus_max": 0.0
 }
 lock = threading.Lock()
 
@@ -49,8 +50,8 @@ board = cv2.aruco.GridBoard(
     dictionary=board_def
 )
 
+# Update description
 def focus_worker(get_frame_func):
-    """Background thread for tag detection and focus measurement."""
     while True:
         if focus_enabled:
             frame = get_frame_func()
@@ -68,8 +69,14 @@ def focus_worker(get_frame_func):
                     crop = gray[y:y+h, x:x+w]
                     lap = cv2.Laplacian(crop, cv2.CV_64F).var()
 
+                    # Update focus data
                     focus_data["bbox"] = (x, y, w, h)
                     focus_data["laplacian"] = lap
+
+                    # Update maximum focus if current focus is better
+                    if lap > focus_data["focus_max"]:
+                        focus_data["focus_max"] = lap
+                        focus_data["focus_threshold"] = lap * 0.8333  # New threshold
                 else:
                     focus_data["bbox"] = None
                     focus_data["laplacian"] = None
@@ -78,9 +85,6 @@ def focus_worker(get_frame_func):
 
 # ========== Focus Helper ==========
 def run_focusHelper():
-    global end_stream
-    end_stream = False
-
     cmd = [
     'ffmpeg',
     '-loglevel', 'quiet',
@@ -120,17 +124,24 @@ def run_focusHelper():
 
                 bbox = focus_data["bbox"]
                 lap = focus_data["laplacian"]
+                focus_threshold = focus_data["focus_max"]
             
             if focus_enabled:
                 if bbox is not None and lap is not None:
                     x, y, w, h = bbox
                     focus_color = (0, 255, 0) if lap > focus_threshold else (0, 0, 255)
                     cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
-                    cv2.putText(frame, f"Focus: {lap:.2f}", (70, 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 3.0, focus_color, 3)
-                elif focus_enabled:
+
+                    # Draw max focus at the top-left
+                    cv2.putText(frame, f"Max Focus: {focus_data['focus_max']:.2f}", (70, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 2)
+
+                    # Draw current focus below max focus
+                    cv2.putText(frame, f"Current: {lap:.2f}", (70, 110),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.5, focus_color, 2)
+                else:
                     cv2.putText(frame, "Detecting ArUco...", (70, 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 3.0, (0, 255, 255), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 255, 255), 2)
             
             frame = cv2.resize(frame, (1920, 1080))
 
@@ -149,16 +160,12 @@ def run_focusHelper():
     finally:
         pipe.terminate()
         pipe.wait()
+        end_stream = False
         print("[INFO] FFmpeg process terminated")
 
 # ========== Calculate Calibration Distance ==========
 def compute_CD(x, y):
-    return (-0.0339 * x**2
-            - 2.0089 * y**2
-            + 0.6164 * x * y
-            - 19.841 * x
-            + 10.4239 * y
-            + 9.0062)        
+    return (-0.0339 * x**2 - 2.0089 * y**2 + 0.6164 * x * y - 19.841 * x + 10.4239 * y + 9.0062)        
 
 # ========== Tag Coordinate Record ==========
 def detect_tags(frame):
@@ -170,9 +177,6 @@ def detect_tags(frame):
 
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
-    global end_stream
-    end_stream = False
-
     cmd = [
     'ffmpeg',
     '-loglevel', 'quiet',
@@ -226,6 +230,7 @@ def run_liveFeedback():
     finally:
         pipe.terminate()
         pipe.wait()
+        end_stream = False
         print("[INFO] FFmpeg process terminated")
 
 # ========== HTML Routes ==========
@@ -251,6 +256,7 @@ def toggle_focus():
         # Always reset focus data on toggle (both directions)
         focus_data["bbox"] = None
         focus_data["laplacian"] = None
+        focus_data["focus_threshold"] = 0.0
     return {"status": "focus_enabled" if focus_enabled else "focus_disabled"}
 
 @app.post("/toggle_detection")

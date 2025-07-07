@@ -45,12 +45,39 @@
         }
     </style>
     <script>
+        let detectionOn = false;  // Local state tracking
+
         document.addEventListener("keydown", function(event) {
             if (event.key === "t" || event.key === "T") {
-                fetch("/toggle_detection", { method: "POST" });
+                fetch("/toggle_detection", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            // Toggle local state
+                            detectionOn = !detectionOn;
+                            updateToggleIndicator();
+                        }
+                    })
+                    .catch(console.error);
             } else if (event.key === "c" || event.key === "C") {
                 fetch("/clear_corners", { method: "POST" });
             }
+        });
+
+        // Update the on/off indicator
+        function updateToggleIndicator() {
+            const icon = document.getElementById("toggle-icon");
+            if (detectionOn) {
+                icon.textContent = "ON";
+                icon.style.color = "lime";
+            } else {
+                icon.textContent = "OFF";
+                icon.style.color = "red";
+            }
+        }
+
+        // Send signal to server before page unload
+        window.addEventListener("beforeunload", function () {
+            navigator.sendBeacon("/stop_stream");
         });
     </script>
 </head>
@@ -60,12 +87,17 @@
     <h1>Live Tag Detection</h1>
     <div>
         <img src="/video_feed" width="1080" />
-        <p style="margin-top: 20px; font-size: 16px;">
-            Toggle detection: Press <strong>T</strong><br>
-            Clear corners: Press <strong>C</strong><br>
-        </p>
     </div>
 
+    <div id="toggle-indicator" style="margin: 20px; font-size: 24px;">
+    Detection: <span id="toggle-icon" style="color: red;">OFF</span>
+    </div>
+
+    <p style="margin-top: 20px; font-size: 16px;">
+        Toggle detection: Press <strong>T</strong><br>
+        Clear corners: Press <strong>C</strong><br>
+    </p>
+    
     <a href="/" class="button-link back-button">Back</a>
 </body>
 </html>

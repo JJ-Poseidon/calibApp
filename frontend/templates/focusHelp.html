@@ -21,8 +21,7 @@
             border: 4px solid #444;
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
         }
-
-                /* General button styling */
+        /* General button styling */
         .button-link {
             display: inline-block;
             text-decoration: none;
@@ -31,11 +30,9 @@
             border-radius: 12px;
             transition: background-color 0.3s;
         }
-
         .button-link:hover {
             background-color: #ffcd17ee;
         }
-
         /* Back button specific styling */
         .back-button {
             font-size: 14px;
@@ -46,17 +43,37 @@
         }
     </style>
     <script>
+        let focusOn = false;  // Local state tracking
+
         document.addEventListener("keydown", function(event) {
             if (event.key === "t" || event.key === "T") {
-                fetch("/toggle_focus", { method: "POST" });
-            } else if (event.key === "r" || event.key === "C") {
+                fetch("/toggle_focus", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            focusOn = !focusOn;
+                            updateFocusIndicator();
+                        }
+                    })
+                    .catch(console.error);
+            } else if (event.key === "r" || event.key === "R") {
                 fetch("/record_focus", { method: "POST" });
             }
-        });    
+        });
+
+        function updateFocusIndicator() {
+            const icon = document.getElementById("focus-icon");
+            if (focusOn) {
+                icon.textContent = "ON";
+                icon.style.color = "lime";
+            } else {
+                icon.textContent = "OFF";
+                icon.style.color = "red";
+            }
+        }
 
         // Send signal to server before page unload
         window.addEventListener("beforeunload", function () {
-            navigator.sendBeacon("/stop_focus_stream");
+            navigator.sendBeacon("/stop_stream");
         });
     </script>
 </head>
@@ -65,13 +82,18 @@
     <img src="/static/SM-Vertical.png" width="60" style="position: absolute; top: 0; left: 0;" />
     <h1>Focus Helper</h1>
 
+    <!-- Toggle indicator -->
+    <div id="focus-indicator" style="margin: 20px; font-size: 24px;">
+        Focus: <span id="focus-icon" style="color: red;">OFF</span>
+    </div>
+
     <div class="video-container">
         <img src="/video_focus" width="1080" alt="Camera Feed">
     </div>
 
     <p style="margin-top: 20px; font-size: 16px;">
-            Enable focus first: Press <strong>T</strong><br>
-            Record focus: Press <strong>R</strong><br>
+        Enable focus first: Press <strong>T</strong><br>
+        Record focus: Press <strong>R</strong><br>
     </p>
 
     <a href="/" class="button-link back-button">Back</a>
