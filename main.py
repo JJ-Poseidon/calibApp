@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from collections import deque
 import subprocess
 import threading
 import uvicorn
@@ -33,7 +34,9 @@ HEIGHT = 2160
 frame_size = WIDTH * HEIGHT * 3  # 3 channels for RGB
 detection_enabled = False  # Flag to control tag detection
 focus_enabled = False  # Flag to control focus measurement
-persistent_corners = []
+all_pts = []  # Store all detected corners
+all_corners = []
+recent_corners = deque(maxlen=120)  # holds the most recent 60 seconds
 focus_data = {
     "bbox": None,  # Bounding box for detected markers
     "laplacian": None,  # Focus measure
@@ -85,6 +88,7 @@ def focus_worker(get_frame_func):
 
 # ========== Focus Helper ==========
 def run_focusHelper():
+    end_stream = False
     cmd = [
     'ffmpeg',
     '-loglevel', 'quiet',
@@ -124,16 +128,16 @@ def run_focusHelper():
 
                 bbox = focus_data["bbox"]
                 lap = focus_data["laplacian"]
-                focus_threshold = focus_data["focus_max"]
             
             if focus_enabled:
                 if bbox is not None and lap is not None:
                     x, y, w, h = bbox
-                    focus_color = (0, 255, 0) if lap > focus_threshold else (0, 0, 255)
+                    focus_color = (0, 255, 0) if lap > focus_data['focus_threshold'] else (0, 0, 255)
+                    print(str(focus_color))
                     cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
 
                     # Draw max focus at the top-left
-                    cv2.putText(frame, f"Max Focus: {focus_data['focus_max']:.2f}", (70, 50),
+                    cv2.putText(frame, f"Max Focus: {focus_data['focus_threshold']:.2f}", (70, 50),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 2)
 
                     # Draw current focus below max focus
@@ -173,13 +177,17 @@ def detect_tags(frame):
     corners, ids, _ = tagDet.detectMarkers(gray)
     if ids is not None:
         with lock:
-            persistent_corners.extend(c[0] for c in corners)
+            # c[0] is (4, 2), so stack them into a single array (N, 2)
+            all_pts = np.vstack([c[0] for c in corners])  # shape: (N, 2)
+            all_corners.append(all_pts)                  # store everything
+            recent_corners.append(all_pts)               # store rolling buffer
 
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
+    end_stream = False
     cmd = [
     'ffmpeg',
-    '-loglevel', 'quiet',
+    # '-loglevel', 'quiet',
     '-rtsp_transport', 'tcp',
     '-fflags', 'nobuffer',
     '-flags', 'low_delay',
@@ -208,10 +216,11 @@ def run_liveFeedback():
             if detection_enabled and frame_count % 4 == 0:
                 threading.Thread(target=detect_tags, args=(frame,)).start()
 
-            if frame_count % 1 == 0:
-                for marker_corners in persistent_corners:
-                    for x, y in marker_corners:
-                        cv2.circle(frame, (int(x), int(y)), 10, (255, 0, 0), -1)
+            with lock:
+                if frame_count % 1 == 0:
+                    for marker_set in recent_corners:
+                        for pt in marker_set:
+                            cv2.circle(frame, tuple(pt.astype(int)), 10, (255, 0, 0), -1)
 
             frame = cv2.resize(frame, (1280, 720))
 
@@ -256,7 +265,7 @@ def toggle_focus():
         # Always reset focus data on toggle (both directions)
         focus_data["bbox"] = None
         focus_data["laplacian"] = None
-        focus_data["focus_threshold"] = 0.0
+        focus_data["focus_max"] = 0.0
     return {"status": "focus_enabled" if focus_enabled else "focus_disabled"}
 
 @app.post("/toggle_detection")
@@ -267,10 +276,17 @@ def toggle_detection():
 
 @app.post("/clear_corners")
 def clear_corners():
-    global persistent_corners
     with lock:
-        persistent_corners.clear()
+        all_pts.clear()
+        all_corners.clear()
+        recent_corners.clear()
     return {"status": "corners_cleared"}
+
+@app.post("/show_corners")
+def show_corners():
+    global toggle_show_corners
+    toggle_show_corners = not toggle_show_corners
+    return {"status": "show_corners_enabled" if toggle_show_corners else "show_corners_disabled"}
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
@@ -279,6 +295,15 @@ def home(request: Request):
 @app.post("/stop_stream")
 def stop_stream():
     global end_stream
+    
+    # Comment this out if working on local laptops, only for Debian/Ubuntu environments
+    # proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # # Wait a bit to let it open
+    # time.sleep(1)
+    # # Simulate pressing 'q' to quit
+    # proc.stdin.write(b'q')
+    # proc.stdin.flush()
+
     end_stream = True
     return Response(status_code=204)
 
