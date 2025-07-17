@@ -58,6 +58,9 @@
                         }
                     })
                     .catch(console.error);
+            } else if (event.key === "s" || event.key === "S") {
+                fetch("/show_corners", { method: "POST" });
+            
             } else if (event.key === "c" || event.key === "C") {
                 fetch("/clear_corners", { method: "POST" });
             }

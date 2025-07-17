@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Request, BackgroundTasks, Form
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from collections import deque
+import os
 import subprocess
 import threading
 import uvicorn
+import datetime
 import time
+import signal
 import cv2
 import numpy as np
 
@@ -34,6 +37,8 @@ HEIGHT = 2160
 frame_size = WIDTH * HEIGHT * 3  # 3 channels for RGB
 detection_enabled = False  # Flag to control tag detection
 focus_enabled = False  # Flag to control focus measurement
+pause_stream = False  # Flag to pause the stream
+latest_frame = None  # Store the latest frame for focus measurement
 all_pts = []  # Store all detected corners
 all_corners = []
 recent_corners = deque(maxlen=120)  # holds the most recent 60 seconds
@@ -106,7 +111,6 @@ def run_focusHelper():
     ]
 
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    focus_threshold = 4500.0
     last_frame = [None]
 
     def get_latest_frame():
@@ -206,6 +210,7 @@ def run_liveFeedback():
 
     try:
         while not end_stream:
+            
             raw_frame = pipe.stdout.read(frame_size)
             if len(raw_frame) != frame_size:
                 continue
@@ -241,6 +246,34 @@ def run_liveFeedback():
         pipe.wait()
         end_stream = False
         print("[INFO] FFmpeg process terminated")
+
+# ========== Record Rosbag ==========
+def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
+    # Generate filename with UTC datetime
+    utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    bag_name = f"{save_path}{utc_datetime}/results"
+
+    # ros2 bag record command
+    cmd = [
+        "ros2", "bag", "record",
+        "-o", bag_name,
+        topic
+    ]
+
+    print(f"Starting rosbag record on topic {topic} for {duration} seconds...")
+    # Start subprocess
+    proc = subprocess.Popen(cmd)
+
+    try:
+        # Wait for the specified duration
+        time.sleep(duration)
+    except KeyboardInterrupt:
+        print("Recording interrupted by user.")
+    finally:
+        # Terminate the recording process gracefully
+        print("Stopping rosbag record...")
+        proc.send_signal(signal.SIGINT)
+        proc.wait()
 
 # ========== HTML Routes ==========
 @app.get("/video_focus")
@@ -297,12 +330,12 @@ def stop_stream():
     global end_stream
     
     # Comment this out if working on local laptops, only for Debian/Ubuntu environments
-    # proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # # Wait a bit to let it open
-    # time.sleep(1)
-    # # Simulate pressing 'q' to quit
-    # proc.stdin.write(b'q')
-    # proc.stdin.flush()
+    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Wait a bit to let it open
+    time.sleep(1)
+    # Simulate pressing 'q' to quit
+    proc.stdin.write(b'q')
+    proc.stdin.flush()
 
     end_stream = True
     return Response(status_code=204)
@@ -349,6 +382,24 @@ async def calculateCD_result(request: Request, focal_length: float = Form(...)):
 @app.get("/liveDetect", response_class=HTMLResponse)
 def liveDetect_screen(request: Request):
     return templates.TemplateResponse("liveDetect.html", {"request": request})
+
+@app.post("/stop")
+def stop_all_operations():
+    global detection_enabled, focus_enabled, end_stream
+
+    print("[INFO] Stopping all operations and shutting down server...")
+
+    # Set flags to stop loops and threads
+    detection_enabled = False
+    focus_enabled = False
+    end_stream = True
+
+    # Wait a moment for threads/subprocesses to clean up
+    time.sleep(1)
+
+    # Exit the process — this closes the server and frees port 6800
+    print("[INFO] Exiting process now.")
+    os._exit(0)
 
 # ========== Entry Point ==========
 if __name__ == "__main__":

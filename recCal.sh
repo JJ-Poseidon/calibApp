@@ -1,38 +1,29 @@
 #!/bin/bash
 
-# Prompt user to begin
-echo "Press ENTER to begin calibration recording..."
-read
+source /opt/ros/galactic/setup.bash
+source /aicv-sensor-drivers/install/local_setup.bash
 
-# Countdown before starting
-echo "Calibration begins in:"
-for i in {5..1}; do
-    echo "$i..."
-    sleep 1
-done
+UTC_DATETIME=$(date -u +"%Y-%m-%d_%H-%M-%S")
 
-# Generate UTC timestamp for filename
-utc_time=$(date -u +"%Y-%m-%dT_%H-%M-%SZ")
-bag_name="calibration_$utc_time"
-bag_path="/mnt/$bag_name"
-
-# Start ros2 bag recording
-echo "Recording ros bag to: $bag_path"
-# ros2 bag record /camera1/image_raw -o "$bag_path" &
+# intrinsic calibration
+echo -e "\n\n<--- Collect data for Camera Intrinsic calibration --->"
+mkdir -p /mnt/$UTC_DATETIME/data/intrinsics_$UTC_DATETIME
+cd /mnt/$UTC_DATETIME/data/intrinsics_$UTC_DATETIME
+echo "Data collection duration: 120 seconds"
+read -p "Press Enter to continue?" ENTER
+echo "Data collection will begin in 5 seconds.."
+sleep 5
 ros2 bag record -d 120 -o intrinsics_$UTC_DATETIME $RGB_IMAGE_TOPIC &
-bag_pid=$!
-
-# Countdown timer (120 seconds)
-for ((i=120; i>0; i--)); do
-    printf "\rRecording... %3d seconds left" "$i"
-    sleep 1
+INTRINSICPID=$!
+count=120
+while [ $count -gt 0 ]
+do
+  echo -ne "Countdown: $count s\r"
+  count=$((count-1))
+  sleep 1
 done
-echo -e "\nRecording complete!"
 
-# Stop ros2 bag recording
-echo "Stopping ros2 bag..."
-kill $bag_pid
-sleep 2  # Allow cleanup
+kill $INTRINSICPID && sleep 5
 
 # Ask if user wants to keep the file
 echo "Bag file: $bag_path"
