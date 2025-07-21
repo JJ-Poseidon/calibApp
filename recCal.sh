@@ -26,13 +26,15 @@ done
 kill $INTRINSICPID && sleep 5
 
 # Ask if user wants to keep the file
-echo "Bag file: $bag_path"
+echo -e "\n\n##### recording complete! Your results are in /mnt/$UTC_DATETIME #####"
 read -p "Do you want to keep this rosbag? [y/N]: " keep
 
 if [[ "$keep" =~ ^[Yy]$ ]]; then
-    echo "Rosbag kept at: $bag_path"
+    echo "Rosbag saved"
+    exit 0
 else
     echo "Deleting rosbag..."
-    rm -rf "$bag_path"
+    rm -rf "/mnt/$UTC_DATETIME"
     echo "Rosbag deleted."
+    exit 0
 fi

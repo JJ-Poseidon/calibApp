@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from collections import deque
 import os
+import shutil
 import subprocess
 import threading
 import uvicorn
@@ -41,7 +42,10 @@ pause_stream = False  # Flag to pause the stream
 latest_frame = None  # Store the latest frame for focus measurement
 all_pts = []  # Store all detected corners
 all_corners = []
-recent_corners = deque(maxlen=120)  # holds the most recent 60 seconds
+recent_corners = deque(maxlen=20)  # holds the most recent 60 seconds
+rec_in_progress = False  # Flag to control rosbag recording
+last_rosbag_path = None  # Path to the last recorded rosbag
+rosbag_thread = None  # Thread for rosbag recording
 focus_data = {
     "bbox": None,  # Bounding box for detected markers
     "laplacian": None,  # Focus measure
@@ -84,7 +88,7 @@ def focus_worker(get_frame_func):
                     # Update maximum focus if current focus is better
                     if lap > focus_data["focus_max"]:
                         focus_data["focus_max"] = lap
-                        focus_data["focus_threshold"] = lap * 0.8333  # New threshold
+                        focus_data["focus_threshold"] = lap * 0.9  # New threshold
                 else:
                     focus_data["bbox"] = None
                     focus_data["laplacian"] = None
@@ -186,12 +190,20 @@ def detect_tags(frame):
             all_corners.append(all_pts)                  # store everything
             recent_corners.append(all_pts)               # store rolling buffer
 
+# ========== Draw corners ==========
+def draw_corners(frame, corners_list):
+    for marker_set in corners_list:
+        for pt in marker_set:
+            cv2.circle(frame, tuple(pt.astype(int)), 10, (255, 0, 0), -1)
+    return frame
+
 # ========== Live Feedback Stream ==========
 def run_liveFeedback():
     end_stream = False
+    show_once = True  # Show corners only once when paused
     cmd = [
     'ffmpeg',
-    # '-loglevel', 'quiet',
+    '-loglevel', 'quiet',
     '-rtsp_transport', 'tcp',
     '-fflags', 'nobuffer',
     '-flags', 'low_delay',
@@ -210,7 +222,28 @@ def run_liveFeedback():
 
     try:
         while not end_stream:
+            if pause_stream:
+                if show_once:
+                    print("[INFO] Showing corners on paused stream")
+                    with lock:
+                        frame_with_corners = draw_corners(frame.copy(), all_corners)
+                    ret, jpeg = cv2.imencode(".jpg", frame_with_corners, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                    if ret:
+                        latest_frame = jpeg.tobytes()
+
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + latest_frame + b"\r\n"
+                    )
+
+                    show_once = False
+                    time.sleep(0.1)
+                continue  # Skip frame reading when paused
+
+            else:
+                show_once = True
             
+
             raw_frame = pipe.stdout.read(frame_size)
             if len(raw_frame) != frame_size:
                 continue
@@ -223,13 +256,11 @@ def run_liveFeedback():
 
             with lock:
                 if frame_count % 1 == 0:
-                    for marker_set in recent_corners:
-                        for pt in marker_set:
-                            cv2.circle(frame, tuple(pt.astype(int)), 10, (255, 0, 0), -1)
+                    frame_with_corners = draw_corners(frame.copy(), recent_corners)
 
-            frame = cv2.resize(frame, (1280, 720))
+            web_frame = cv2.resize(frame_with_corners, (1280, 720))
 
-            ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+            ret, jpeg = cv2.imencode(".jpg", web_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
 
             if not ret:
                 continue
@@ -249,11 +280,13 @@ def run_liveFeedback():
 
 # ========== Record Rosbag ==========
 def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
-    # Generate filename with UTC datetime
+    global rec_in_progress, last_rosbag_path
+    rec_in_progress = True  # Mark recording as in progress
+
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
     bag_name = f"{save_path}{utc_datetime}/results"
+    last_rosbag_path = f"{save_path}{utc_datetime}"
 
-    # ros2 bag record command
     cmd = [
         "ros2", "bag", "record",
         "-o", bag_name,
@@ -261,19 +294,19 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
     ]
 
     print(f"Starting rosbag record on topic {topic} for {duration} seconds...")
-    # Start subprocess
+
     proc = subprocess.Popen(cmd)
 
     try:
-        # Wait for the specified duration
         time.sleep(duration)
     except KeyboardInterrupt:
         print("Recording interrupted by user.")
     finally:
-        # Terminate the recording process gracefully
         print("Stopping rosbag record...")
         proc.send_signal(signal.SIGINT)
         proc.wait()
+        rec_in_progress = False
+        print("Recording stopped.")
 
 # ========== HTML Routes ==========
 @app.get("/video_focus")
@@ -315,11 +348,44 @@ def clear_corners():
         recent_corners.clear()
     return {"status": "corners_cleared"}
 
-@app.post("/show_corners")
-def show_corners():
-    global toggle_show_corners
-    toggle_show_corners = not toggle_show_corners
-    return {"status": "show_corners_enabled" if toggle_show_corners else "show_corners_disabled"}
+@app.post("/toggle_pause")
+def toggle_pause():
+    global pause_stream
+    pause_stream = not pause_stream
+    return {"paused": pause_stream}
+
+@app.post("/start_rosbag_record")
+async def toggle_rosbag():
+    global rec_in_progress, rosbag_thread
+
+    if rec_in_progress:
+        # If recording is in progress, ignore or return status
+        return JSONResponse(content={"recording": True, "message": "Recording already in progress"})
+    else:
+        # Start recording in a separate thread so FastAPI is not blocked
+        rosbag_thread = threading.Thread(target=record_rosbag, kwargs={
+            "topic": "/camera1/image_raw",
+            "duration": 120,
+            "save_path": "/mnt/"
+        }, daemon=True)
+        rosbag_thread.start()
+        return JSONResponse(content={"recording": True, "message": "Started recording"})
+    
+@app.post("/remove_rosbag")
+def remove_rosbag():
+    global last_rosbag_path
+
+    if last_rosbag_path is None:
+        return JSONResponse(content={"removed": False, "message": "No rosbag to remove."})
+
+    try:
+        shutil.rmtree(last_rosbag_path)
+        print(f"Removed rosbag folder at {last_rosbag_path}")
+        last_rosbag_path = None
+        return JSONResponse(content={"removed": True, "message": "Rosbag removed successfully."})
+    except Exception as e:
+        print(f"Error removing rosbag folder: {e}")
+        return JSONResponse(content={"removed": False, "message": f"Failed to remove rosbag: {e}"})
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
@@ -393,6 +459,13 @@ def stop_all_operations():
     detection_enabled = False
     focus_enabled = False
     end_stream = True
+
+    # Optional: Close any blocking terminal subprocess if necessary
+    # NOTE: You can safely remove this if you're not using 'less' for testing
+    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(1)
+    proc.stdin.write(b'q')
+    proc.stdin.flush()
 
     # Wait a moment for threads/subprocesses to clean up
     time.sleep(1)
