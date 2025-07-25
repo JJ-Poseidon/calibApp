@@ -124,7 +124,10 @@ def run_focusHelper():
     threading.Thread(target=focus_worker, args=(get_latest_frame,), daemon=True).start()
 
     try:
-        while not end_stream:
+        while True:
+            if end_stream:
+                print("[INFO] End stream signal received, terminating FFmpeg.")
+                break
             raw = pipe.stdout.read(frame_size)
             if len(raw) != frame_size:
                 continue
@@ -141,7 +144,6 @@ def run_focusHelper():
                 if bbox is not None and lap is not None:
                     x, y, w, h = bbox
                     focus_color = (0, 255, 0) if lap > focus_data['focus_threshold'] else (0, 0, 255)
-                    print(str(focus_color))
                     cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
 
                     # Draw max focus at the top-left
@@ -221,7 +223,10 @@ def run_liveFeedback():
     frame_count = 0
 
     try:
-        while not end_stream:
+        while True:
+            if end_stream:
+                print("[INFO] End stream signal received, terminating FFmpeg.")
+                break
             if pause_stream:
                 if show_once:
                     print("[INFO] Showing corners on paused stream")
@@ -309,19 +314,14 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
         print("Recording stopped.")
 
 # ========== HTML Routes ==========
+# Focus Helper API
+@app.get("/focusHelp", response_class=HTMLResponse)
+def focusHelp_screen(request: Request):
+    return templates.TemplateResponse("focusHelp.html", {"request": request})
+
 @app.get("/video_focus")
 def video_focus():
     return StreamingResponse(run_focusHelper(), media_type="multipart/x-mixed-replace; boundary=frame")
-
-@app.post("/record_focus")
-def record_focus():
-    global start_recording
-    start_recording = not start_recording
-    return {"status": "recording_started" if start_recording else "recording_stopped"}
-
-@app.get("/video_feed")
-def video_feed():
-    return StreamingResponse(run_liveFeedback(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.post("/toggle_focus")
 def toggle_focus():
@@ -333,6 +333,36 @@ def toggle_focus():
         focus_data["laplacian"] = None
         focus_data["focus_max"] = 0.0
     return {"status": "focus_enabled" if focus_enabled else "focus_disabled"}
+
+# Calculate CD API
+@app.get("/calculateCD", response_class=HTMLResponse)
+def calculateCD_screen(request: Request):
+    return templates.TemplateResponse("calculateCD.html", {"request": request})
+
+@app.post("/calculateCD", response_class=HTMLResponse)
+async def calculateCD_result(request: Request, focal_length: float = Form(...)):
+    y_values = np.linspace(2.5, 9.0, 14)
+    z_values = compute_CD(focal_length, y_values)
+
+    max_index = np.argmax(z_values)
+    best_y = y_values[max_index]
+
+    return templates.TemplateResponse("calculateCD.html", {
+        "request": request,
+        "result": {
+            "focal_length": focal_length,
+            "best_y": round(best_y, 2),
+        }
+    })
+
+# Live Detection API
+@app.get("/liveDetect", response_class=HTMLResponse)
+def liveDetect_screen(request: Request):
+    return templates.TemplateResponse("liveDetect.html", {"request": request})
+
+@app.get("/video_feed")
+def video_feed():
+    return StreamingResponse(run_liveFeedback(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.post("/toggle_detection")
 def toggle_detection():
@@ -365,7 +395,7 @@ async def toggle_rosbag():
         # Start recording in a separate thread so FastAPI is not blocked
         rosbag_thread = threading.Thread(target=record_rosbag, kwargs={
             "topic": "/camera1/image_raw",
-            "duration": 120,
+            "duration": 10, # Duration of calibration in seconds
             "save_path": "/mnt/"
         }, daemon=True)
         rosbag_thread.start()
@@ -387,24 +417,10 @@ def remove_rosbag():
         print(f"Error removing rosbag folder: {e}")
         return JSONResponse(content={"removed": False, "message": f"Failed to remove rosbag: {e}"})
 
+# Home Page API
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request, "camera_status": None})
-
-@app.post("/stop_stream")
-def stop_stream():
-    global end_stream
-    
-    # Comment this out if working on local laptops, only for Debian/Ubuntu environments
-    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # Wait a bit to let it open
-    time.sleep(1)
-    # Simulate pressing 'q' to quit
-    proc.stdin.write(b'q')
-    proc.stdin.flush()
-
-    end_stream = True
-    return Response(status_code=204)
 
 @app.post("/test_url")
 def test_url(request: Request, camera_url_input: str = Form(...)):
@@ -421,33 +437,22 @@ def test_url(request: Request, camera_url_input: str = Form(...)):
 
     return templates.TemplateResponse("home.html", {"request": request, "camera_status": status_message})
 
-@app.get("/focusHelp", response_class=HTMLResponse)
-def focusHelp_screen(request: Request):
-    return templates.TemplateResponse("focusHelp.html", {"request": request})
-
-@app.get("/calculateCD", response_class=HTMLResponse)
-def calculateCD_screen(request: Request):
-    return templates.TemplateResponse("calculateCD.html", {"request": request})
-
-@app.post("/calculateCD", response_class=HTMLResponse)
-async def calculateCD_result(request: Request, focal_length: float = Form(...)):
-    y_values = np.linspace(2.5, 9.0, 14)
-    z_values = compute_CD(focal_length, y_values)
-
-    max_index = np.argmax(z_values)
-    best_y = y_values[max_index]
-
-    return templates.TemplateResponse("calculateCD.html", {
-        "request": request,
-        "result": {
-            "focal_length": focal_length,
-            "best_y": round(best_y, 2),
-        }
-    })
-
-@app.get("/liveDetect", response_class=HTMLResponse)
-def liveDetect_screen(request: Request):
-    return templates.TemplateResponse("liveDetect.html", {"request": request})
+# Web Server Handling
+@app.post("/stop_stream")
+def stop_stream():
+    global end_stream
+    
+    # Comment this out if working on local laptops, only for Debian/Ubuntu environments
+    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Wait a bit to let it open
+    time.sleep(1)
+    # Simulate pressing 'q' to quit
+    proc.stdin.write(b'q')
+    print("[INFO] Stopping stream and closing FFmpeg process.")
+    proc.stdin.flush()
+    print("[INFO] FFmpeg process closed.")
+    end_stream = True
+    return Response(status_code=204)
 
 @app.post("/stop")
 def stop_all_operations():
@@ -461,7 +466,7 @@ def stop_all_operations():
     end_stream = True
 
     # Optional: Close any blocking terminal subprocess if necessary
-    # NOTE: You can safely remove this if you're not using 'less' for testing
+    # Comment this out if working locally on laptops, only for Debian/Ubuntu environments
     proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(1)
     proc.stdin.write(b'q')

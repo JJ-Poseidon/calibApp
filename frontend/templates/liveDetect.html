@@ -88,6 +88,12 @@
       left: 20px;
     }
   </style>
+  <script>
+  // Send signal to server before page unload
+  window.addEventListener("beforeunload", function () {
+    navigator.sendBeacon("/stop_stream");
+  });
+  </script>
 </head>
 
 <body>
@@ -113,7 +119,7 @@
     Clear corners: Press <strong>C</strong><br />
   </p>
 
-  <a href="/" class="button-link back-button">Back</a>
+  <a id="back-btn" href="/" class="button-link back-button">Back</a>
 
   <script>
     let detectionOn = false;
@@ -124,6 +130,12 @@
     const timerOverlay = document.getElementById("timer-overlay");
     const toast = document.getElementById("toast");
     const rosbagBtn = document.getElementById("rosbag-btn");
+    
+    document.getElementById("back-btn").addEventListener("click", function(event) {
+        event.preventDefault();
+        fetch("/stop_stream", {method: "POST"})
+          .then(() => { window.location.href = "/"; });
+    });
 
     // Keyboard toggles for detection etc.
     document.addEventListener("keydown", (event) => {
@@ -138,6 +150,8 @@
           .catch(console.error);
       } else if (event.key === "c" || event.key === "C") {
         fetch("/clear_corners", { method: "POST" });
+      } else if (event.key === "f" || event.key === "F") {
+        fetch("/toggle_pause", { method: "POST" });
       }
     });
 
@@ -249,6 +263,7 @@
           onClick: async () => {
             rosbagRecording = false;
             await fetch("/toggle_pause", { method: "POST" });
+            await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
         },
@@ -258,6 +273,7 @@
             rosbagRecording = false;
             await fetch("/remove_rosbag", { method: "POST" });
             await fetch("/toggle_pause", { method: "POST" });
+            await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
         },
@@ -269,4 +285,3 @@
   </script>
 </body>
 </html>
-/

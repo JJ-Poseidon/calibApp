@@ -95,6 +95,14 @@
         Enable focus first: Press <strong>T</strong><br>
     </p>
 
-    <a href="/" class="button-link back-button">Back</a>
+    <a id="back-btn" href="/" class="button-link back-button">Back</a>
+    
+    <script>
+        document.getElementById("back-btn").addEventListener("click", function(event) {
+            event.preventDefault();
+            fetch("/stop_stream", {method: "POST"})
+                .then(() => { window.location.href = "/"; });
+        });
+    </script>
 </body>
 </html>
