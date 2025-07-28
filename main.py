@@ -43,7 +43,7 @@ latest_frame = None  # Store the latest frame for focus measurement
 end_stream_flag = threading.Event()
 all_pts = []  # Store all detected corners
 all_corners = []
-recent_corners = deque(maxlen=20)  # holds the most recent 60 seconds
+recent_corners = deque(maxlen=120)  # holds the most recent 60 seconds
 rec_in_progress = False  # Flag to control rosbag recording
 last_rosbag_path = None  # Path to the last recorded rosbag
 rosbag_thread = None  # Thread for rosbag recording
