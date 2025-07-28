@@ -117,13 +117,14 @@ def run_focusHelper():
 
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     last_frame = [None]
+    end_stream_flag.clear()
 
     def get_latest_frame():
         with lock:
             return last_frame[0].copy() if last_frame[0] is not None else None
 
     threading.Thread(target=focus_worker, args=(get_latest_frame,), daemon=True).start()
-
+    
     try:
         while not end_stream_flag.is_set():
             if end_stream:
@@ -223,6 +224,7 @@ def run_liveFeedback():
    
     pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     frame_count = 0
+    end_stream_flag.clear()
 
     try:
         while not end_stream_flag.is_set():
@@ -445,15 +447,15 @@ def test_url(request: Request, camera_url_input: str = Form(...)):
 def stop_stream():
     global end_stream
     end_stream_flag.set()
-    # Comment this out if working on local laptops, only for Debian/Ubuntu environments
-    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # Wait a bit to let it open
-    time.sleep(0.2)
-    # Simulate pressing 'q' to quit
-    proc.stdin.write(b'q')
-    print("[INFO] Stopping stream and closing FFmpeg process.")
-    proc.stdin.flush()
-    print("[INFO] FFmpeg process closed.")
+    # # Comment this out if working on local laptops, only for Debian/Ubuntu environments
+    # proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # # Wait a bit to let it open
+    # time.sleep(0.2)
+    # # Simulate pressing 'q' to quit
+    # proc.stdin.write(b'q')
+    # print("[INFO] Stopping stream and closing FFmpeg process.")
+    # proc.stdin.flush()
+    # print("[INFO] FFmpeg process closed.")
     end_stream = True
     return Response(status_code=204)
 
