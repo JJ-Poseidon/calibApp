@@ -448,7 +448,7 @@ def stop_stream():
     # Comment this out if working on local laptops, only for Debian/Ubuntu environments
     proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # Wait a bit to let it open
-    time.sleep(1)
+    time.sleep(0.2)
     # Simulate pressing 'q' to quit
     proc.stdin.write(b'q')
     print("[INFO] Stopping stream and closing FFmpeg process.")
@@ -476,7 +476,7 @@ def stop_all_operations():
     proc.stdin.flush()
 
     # Wait a moment for threads/subprocesses to clean up
-    time.sleep(1)
+    time.sleep(0.2)
 
     # Exit the process — this closes the server and frees port 6800
     print("[INFO] Exiting process now.")

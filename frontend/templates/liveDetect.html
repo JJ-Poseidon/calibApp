@@ -241,7 +241,7 @@
       rosbagRecording = true;
 
       // Show 120s timer overlay
-      for (let i = 10; i >= 1; i--) {
+      for (let i = 120; i >= 1; i--) {
         showTimerOverlay(i);
         await new Promise((r) => setTimeout(r, 1000));
       }
