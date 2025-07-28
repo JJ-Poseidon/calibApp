@@ -290,7 +290,8 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
     rec_in_progress = True  # Mark recording as in progress
 
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
-    bag_name = f"{save_path}{utc_datetime}/data"
+    os.makedirs(f"{save_path}{utc_datetime}/data", exist_ok=True)  # Ensure directory exists
+    bag_name = f"intrinsics_{utc_datetime}"
     last_rosbag_path = f"{save_path}{utc_datetime}"
 
     cmd = [
