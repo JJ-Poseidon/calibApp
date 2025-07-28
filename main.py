@@ -40,6 +40,7 @@ detection_enabled = False  # Flag to control tag detection
 focus_enabled = False  # Flag to control focus measurement
 pause_stream = False  # Flag to pause the stream
 latest_frame = None  # Store the latest frame for focus measurement
+end_stream_flag = threading.Event()
 all_pts = []  # Store all detected corners
 all_corners = []
 recent_corners = deque(maxlen=20)  # holds the most recent 60 seconds
@@ -124,7 +125,7 @@ def run_focusHelper():
     threading.Thread(target=focus_worker, args=(get_latest_frame,), daemon=True).start()
 
     try:
-        while True:
+        while not end_stream_flag.is_set():
             if end_stream:
                 print("[INFO] End stream signal received, terminating FFmpeg.")
                 break
@@ -174,6 +175,7 @@ def run_focusHelper():
     finally:
         pipe.terminate()
         pipe.wait()
+        end_stream_flag.clear()
         end_stream = False
         print("[INFO] FFmpeg process terminated")
 
@@ -223,7 +225,7 @@ def run_liveFeedback():
     frame_count = 0
 
     try:
-        while True:
+        while not end_stream_flag.is_set():
             if end_stream:
                 print("[INFO] End stream signal received, terminating FFmpeg.")
                 break
@@ -280,6 +282,7 @@ def run_liveFeedback():
     finally:
         pipe.terminate()
         pipe.wait()
+        end_stream_flag.clear()
         end_stream = False
         print("[INFO] FFmpeg process terminated")
 
@@ -441,7 +444,7 @@ def test_url(request: Request, camera_url_input: str = Form(...)):
 @app.post("/stop_stream")
 def stop_stream():
     global end_stream
-    
+    end_stream_flag.set()
     # Comment this out if working on local laptops, only for Debian/Ubuntu environments
     proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # Wait a bit to let it open
