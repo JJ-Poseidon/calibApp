@@ -296,7 +296,7 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
     last_rosbag_path = f"{save_path}{utc_datetime}"
 
     cmd = [
-        "ros2", "bag", "record",
+        "ros2", "bag", "record", "-d", str(duration), 
         "-o", bag_name,
         topic
     ]
