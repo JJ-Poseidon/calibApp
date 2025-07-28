@@ -128,7 +128,6 @@ def run_focusHelper():
     try:
         while not end_stream_flag.is_set():
             if end_stream:
-                print("[INFO] End stream signal received, terminating FFmpeg.")
                 break
             raw = pipe.stdout.read(frame_size)
             if len(raw) != frame_size:
@@ -148,8 +147,8 @@ def run_focusHelper():
                     focus_color = (0, 255, 0) if lap > focus_data['focus_threshold'] else (0, 0, 255)
                     cv2.rectangle(frame, (x, y), (x + w, y + h), focus_color, 2)
 
-                    # Draw max focus at the top-left
-                    cv2.putText(frame, f"Max Focus: {focus_data['focus_threshold']:.2f}", (70, 50),
+                    # Draw threshold focus at the top-left
+                    cv2.putText(frame, f"Threshold Focus: {focus_data['focus_threshold']:.2f}", (70, 50),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 2)
 
                     # Draw current focus below max focus
@@ -229,11 +228,9 @@ def run_liveFeedback():
     try:
         while not end_stream_flag.is_set():
             if end_stream:
-                print("[INFO] End stream signal received, terminating FFmpeg.")
                 break
             if pause_stream:
                 if show_once:
-                    print("[INFO] Showing corners on paused stream")
                     with lock:
                         frame_with_corners = draw_corners(frame.copy(), all_corners)
                     ret, jpeg = cv2.imencode(".jpg", frame_with_corners, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
@@ -251,7 +248,6 @@ def run_liveFeedback():
 
             else:
                 show_once = True
-            
 
             raw_frame = pipe.stdout.read(frame_size)
             if len(raw_frame) != frame_size:
@@ -294,7 +290,7 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
     rec_in_progress = True  # Mark recording as in progress
 
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
-    bag_name = f"{save_path}{utc_datetime}/results"
+    bag_name = f"{save_path}{utc_datetime}/data"
     last_rosbag_path = f"{save_path}{utc_datetime}"
 
     cmd = [
@@ -400,7 +396,7 @@ async def toggle_rosbag():
         # Start recording in a separate thread so FastAPI is not blocked
         rosbag_thread = threading.Thread(target=record_rosbag, kwargs={
             "topic": "/camera1/image_raw",
-            "duration": 10, # Duration of calibration in seconds
+            "duration": 120, # Duration of calibration in seconds
             "save_path": "/mnt/"
         }, daemon=True)
         rosbag_thread.start()
@@ -447,15 +443,7 @@ def test_url(request: Request, camera_url_input: str = Form(...)):
 def stop_stream():
     global end_stream
     end_stream_flag.set()
-    # # Comment this out if working on local laptops, only for Debian/Ubuntu environments
-    # proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # # Wait a bit to let it open
-    # time.sleep(0.2)
-    # # Simulate pressing 'q' to quit
-    # proc.stdin.write(b'q')
-    # print("[INFO] Stopping stream and closing FFmpeg process.")
-    # proc.stdin.flush()
-    # print("[INFO] FFmpeg process closed.")
+
     end_stream = True
     return Response(status_code=204)
 
@@ -471,11 +459,10 @@ def stop_all_operations():
     end_stream = True
 
     # Optional: Close any blocking terminal subprocess if necessary
-    # Comment this out if working locally on laptops, only for Debian/Ubuntu environments
-    proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    time.sleep(1)
-    proc.stdin.write(b'q')
-    proc.stdin.flush()
+    # proc = subprocess.Popen(['less'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # time.sleep(1)
+    # proc.stdin.write(b'q')
+    # proc.stdin.flush()
 
     # Wait a moment for threads/subprocesses to clean up
     time.sleep(0.2)
