@@ -291,6 +291,7 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
 
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(f"{save_path}{utc_datetime}/data", exist_ok=True)  # Ensure directory exists
+    os.chdir(f"{save_path}{utc_datetime}/data")  # Change to the new directory
     bag_name = f"intrinsics_{utc_datetime}"
     last_rosbag_path = f"{save_path}{utc_datetime}"
 
@@ -313,6 +314,7 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
         proc.send_signal(signal.SIGINT)
         proc.wait()
         rec_in_progress = False
+        os.chdir("/mnt/")  # Change back to the original directory
         print("Recording stopped.")
 
 # ========== HTML Routes ==========

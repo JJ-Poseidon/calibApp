@@ -263,6 +263,7 @@
           onClick: async () => {
             rosbagRecording = false;
             await fetch("/toggle_pause", { method: "POST" });
+            await fetch("/toggle_detection", { method: "POST" });
             await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
@@ -273,6 +274,7 @@
             rosbagRecording = false;
             await fetch("/remove_rosbag", { method: "POST" });
             await fetch("/toggle_pause", { method: "POST" });
+            await fetch("/toggle_detection", { method: "POST" });
             await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
