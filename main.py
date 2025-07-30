@@ -286,7 +286,7 @@ def run_liveFeedback():
 
 # ========== Record Rosbag ==========
 def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
-    global rec_in_progress, last_rosbag_path
+    global rec_in_progress, last_rosbag_path, utc_datetime
     rec_in_progress = True  # Mark recording as in progress
 
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
@@ -390,20 +390,28 @@ def toggle_pause():
 
 @app.post("/start_rosbag_record")
 async def toggle_rosbag():
-    global rec_in_progress, rosbag_thread
+    global rec_in_progress, rosbag_thread, utc_datetime
 
     if rec_in_progress:
-        # If recording is in progress, ignore or return status
-        return JSONResponse(content={"recording": True, "message": "Recording already in progress"})
+        return JSONResponse(content={
+            "recording": True,
+            "message": "Recording already in progress",
+            "utc_datetime": utc_datetime if 'utc_datetime' in globals() else None
+        })
     else:
         # Start recording in a separate thread so FastAPI is not blocked
+        utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
         rosbag_thread = threading.Thread(target=record_rosbag, kwargs={
             "topic": "/camera1/image_raw",
             "duration": 120, # Duration of calibration in seconds
             "save_path": "/mnt/"
         }, daemon=True)
         rosbag_thread.start()
-        return JSONResponse(content={"recording": True, "message": "Started recording"})
+        return JSONResponse(content={
+            "recording": True,
+            "message": "Started recording",
+            "utc_datetime": utc_datetime
+        })
     
 @app.post("/remove_rosbag")
 def remove_rosbag():

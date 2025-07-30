@@ -225,7 +225,7 @@
       // 3. 5-second countdown overlay
       for (let i = 5; i >= 1; i--) {
         showTimerOverlay(i);
-        await new Promise((r) => setTimeout(r, 750));
+        await new Promise((r) => setTimeout(r, 800));
       }
       hideTimerOverlay();
 
@@ -237,13 +237,18 @@
       }
 
       // Start rosbag recording (POST /start_rosbag_record)
-      await fetch("/start_rosbag_record", { method: "POST" });
+      let utcName = "";
+      const response = await fetch("/start_rosbag_record", { method: "POST" });
+      if (response.ok) {
+        const data = await response.json();
+        utcName = data.utc_name || "";
+      }
       rosbagRecording = true;
 
       // Show 120s timer overlay
       for (let i = 120; i >= 1; i--) {
         showTimerOverlay(i);
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 800));
       }
       hideTimerOverlay();
 
@@ -257,13 +262,12 @@
       await fetch("/toggle_pause", { method: "POST" });
 
       // 5. Toast prompt to save or remove rosbag
-      showToast("Save rosbag?", [
+      showToast(`Save rosbag: ${utcName}?`, [
         {
           text: "Yes",
           onClick: async () => {
             rosbagRecording = false;
             await fetch("/toggle_pause", { method: "POST" });
-            await fetch("/toggle_detection", { method: "POST" });
             await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
@@ -274,7 +278,6 @@
             rosbagRecording = false;
             await fetch("/remove_rosbag", { method: "POST" });
             await fetch("/toggle_pause", { method: "POST" });
-            await fetch("/toggle_detection", { method: "POST" });
             await fetch("/clear_corners", { method: "POST" });
             hideToast();
           },
