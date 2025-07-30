@@ -171,13 +171,12 @@ def run_focusHelper():
             )
 
     except GeneratorExit:
-        print("[INFO] Client disconnected, shutting down FFmpeg")
+        print("")
     finally:
         pipe.terminate()
         pipe.wait()
         end_stream_flag.clear()
         end_stream = False
-        print("[INFO] FFmpeg process terminated")
 
 # ========== Calculate Calibration Distance ==========
 def compute_CD(x, y):
@@ -276,13 +275,12 @@ def run_liveFeedback():
             )
 
     except GeneratorExit:
-        print("[INFO] Client disconnected, shutting down FFmpeg")
+        print("")
     finally:
         pipe.terminate()
         pipe.wait()
         end_stream_flag.clear()
         end_stream = False
-        print("[INFO] FFmpeg process terminated")
 
 # ========== Record Rosbag ==========
 def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):

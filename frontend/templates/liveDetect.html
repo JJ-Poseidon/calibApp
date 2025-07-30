@@ -241,14 +241,14 @@
       const response = await fetch("/start_rosbag_record", { method: "POST" });
       if (response.ok) {
         const data = await response.json();
-        utcName = data.utc_name || "";
+        utcName = data.utc_datetime || "";
       }
       rosbagRecording = true;
 
       // Show 120s timer overlay
       for (let i = 120; i >= 1; i--) {
         showTimerOverlay(i);
-        await new Promise((r) => setTimeout(r, 925));
+        await new Promise((r) => setTimeout(r, 975));
       }
       hideTimerOverlay();
 
