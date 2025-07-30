@@ -88,12 +88,6 @@
       left: 20px;
     }
   </style>
-  <script>
-  // Send signal to server before page unload
-  window.addEventListener("beforeunload", function () {
-    navigator.sendBeacon("/stop_stream");
-  });
-  </script>
 </head>
 
 <body>
@@ -248,7 +242,7 @@
       // Show 120s timer overlay
       for (let i = 120; i >= 1; i--) {
         showTimerOverlay(i);
-        await new Promise((r) => setTimeout(r, 975));
+        await new Promise((r) => setTimeout(r, 985));
       }
       hideTimerOverlay();
 
