@@ -286,6 +286,7 @@ def run_liveFeedback():
 def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
     global rec_in_progress, last_rosbag_path, utc_datetime
     rec_in_progress = True  # Mark recording as in progress
+    prev_dir = os.getcwd()  # Save current directory
 
     utc_datetime = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(f"{save_path}{utc_datetime}/data", exist_ok=True)  # Ensure directory exists
@@ -312,7 +313,7 @@ def record_rosbag(topic="/camera1/image_raw", duration=120, save_path="/mnt/"):
         proc.send_signal(signal.SIGINT)
         proc.wait()
         rec_in_progress = False
-        os.chdir("/mnt/")  # Change back to the original directory
+        os.chdir(prev_dir)  # Change back to the original directory
         print("Recording stopped.")
 
 # ========== HTML Routes ==========
